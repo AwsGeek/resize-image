@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+
+Parameters:
+
+  InputBucketName:
+    Type: String
+  InputPrefix:
+    Type: String
+    Default: 'images/original/'
+
+  OutputBucketName:
+    Type: String
+  OutputPrefix:
+    Type: String
+    Default: 'images/large/'
+
+  ImageWidth:
+    Type: Number
+  ImageHeight:
+    Type: Number
+
+Resources: 
+
+  InputBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: LambdaPermission
+    Properties:
+      BucketName: !Ref InputBucketName 
+      NotificationConfiguration:
+        LambdaConfigurations:
+        - Event: 's3:ObjectCreated:*'
+          Function: !GetAtt LambdaFunction.Arn
+          Filter:
+            S3Key:
+              Rules:
+                - 
+                  Name: prefix
+                  Value: !Ref InputPrefix
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref LambdaFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref "AWS::AccountId"
+      SourceArn: !Sub "arn:aws:s3:::${InputBucketName}"
+
+  LambdaPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: Lambda
+      Roles:
+        - !Ref LambdaRole
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - 
+            Effect: Allow
+            Action: 
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+            Resource: arn:aws:logs:*:*:*
+          - 
+            Effect: Allow
+            Action: 
+                - s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${InputBucketName}/${InputPrefix}*"
+          - 
+            Effect: Allow
+            Action: 
+                - s3:PutObject
+                - s3:PutObjectAcl
+            Resource: !Sub "arn:aws:s3:::${OutputBucketName}/${OutputPrefix}*"
+
+  LambdaRole: 
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - 
+            Effect: Allow
+            Principal: 
+              Service: 
+                - lambda.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      Path: "/"
+                
+  LambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs6.10
+      CodeUri: ./lambda
+      Timeout: 10
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          BUCKET: !Ref OutputBucketName
+          PREFIX: !Ref OutputPrefix
+          WIDTH: !Ref ImageWidth
+          HEIGHT: !Ref ImageHeight
+
